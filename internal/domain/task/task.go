@@ -12,6 +12,7 @@ const (
 	StatusNew        Status = "new"
 	StatusInProgress Status = "in_progress"
 	StatusDone       Status = "done"
+	StatusCanceled   Status = "canceled"
 
 	PeriodDaily     PeriodicityType = "daily"
 	PeriodMothly    PeriodicityType = "monthly"
@@ -35,7 +36,7 @@ type Task struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 
-	ScheduledAt    time.Time `json:"scheduled_at,omitempty"`
+	ScheduledAt   time.Time  `json:"scheduled_at,omitempty"`
 	IsPeriodicity bool       `json:"is_periodicity"`
 	RepeatRule    RepeatRule `json:"repeat_rule,omitempty"`
 
@@ -46,7 +47,7 @@ type Task struct {
 
 func (s Status) Valid() bool {
 	switch s {
-	case StatusNew, StatusInProgress, StatusDone:
+	case StatusNew, StatusInProgress, StatusDone, StatusCanceled:
 		return true
 	default:
 		return false
