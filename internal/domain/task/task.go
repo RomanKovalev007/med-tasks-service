@@ -35,8 +35,7 @@ type Task struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 
-	DateSheduledAt    time.Time  `json:"date_scheduled_at,omitempty"`
-	TimeSheduledAt    time.Time  `json:"time_scheduled_at,omitempty"`
+	SheduledAt    time.Time  `json:"scheduled_at,omitempty"`
 	IsPeriodicity bool       `json:"is_periodicity"`
 	RepeatRule    RepeatRule `json:"repeat_rule,omitempty"`
 
