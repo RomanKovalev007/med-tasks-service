@@ -64,12 +64,7 @@
         "tags": ["Tasks"],
         "summary": "Get task by ID",
         "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer", "format": "int64", "minimum": 1 }
-          }
+          { "$ref": "#/components/parameters/TaskID" }
         ],
         "responses": {
           "200": {
@@ -87,12 +82,7 @@
         "tags": ["Tasks"],
         "summary": "Update task",
         "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer", "format": "int64", "minimum": 1 }
-          }
+          { "$ref": "#/components/parameters/TaskID" }
         ],
         "requestBody": {
           "required": true,
@@ -119,21 +109,53 @@
         "tags": ["Tasks"],
         "summary": "Delete task",
         "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "integer", "format": "int64", "minimum": 1 }
-          }
+          { "$ref": "#/components/parameters/TaskID" }
         ],
         "responses": {
           "204": { "description": "Deleted" },
           "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
+    },
+    "/api/v1/tasks/{id}/status": {
+      "patch": {
+        "tags": ["Tasks"],
+        "summary": "Update task status",
+        "parameters": [
+          { "$ref": "#/components/parameters/TaskID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateStatusRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Task" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
     }
   },
   "components": {
+    "parameters": {
+      "TaskID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "integer", "format": "int64", "minimum": 1 }
+      }
+    },
     "responses": {
       "BadRequest": {
         "description": "Bad request",
@@ -150,12 +172,54 @@
             "schema": { "$ref": "#/components/schemas/Error" }
           }
         }
+      },
+      "InternalError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
       }
     },
     "schemas": {
+      "RepeatRule": {
+        "type": "object",
+        "required": ["periodicity_type"],
+        "properties": {
+          "periodicity_type": {
+            "type": "string",
+            "enum": ["daily", "monthly", "spec_dates", "even_odd"],
+            "example": "daily"
+          },
+          "interval": {
+            "type": "integer",
+            "description": "For daily: repeat every N days",
+            "example": 3
+          },
+          "days": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1, "maximum": 31 },
+            "description": "For monthly: day numbers of month",
+            "example": [1, 15]
+          },
+          "dates": {
+            "type": "array",
+            "items": { "type": "string", "format": "date" },
+            "description": "For spec_dates: specific dates in YYYY-MM-DD format",
+            "example": ["2026-05-01", "2026-06-01"]
+          },
+          "parity": {
+            "type": "string",
+            "enum": ["even", "odd"],
+            "description": "For even_odd: run on even or odd days of the month",
+            "example": "odd"
+          }
+        }
+      },
       "CreateTaskRequest": {
         "type": "object",
-        "required": ["title"],
+        "required": ["title", "scheduled_at"],
         "properties": {
           "title": {
             "type": "string",
@@ -165,16 +229,28 @@
             "type": "string",
             "example": "Collect release notes and check migrations"
           },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-05-01T09:00:00Z"
+          },
           "status": {
             "type": "string",
-            "enum": ["new", "in_progress", "done"],
+            "enum": ["new", "in_progress", "done", "canceled"],
             "example": "new"
+          },
+          "is_periodicity": {
+            "type": "boolean",
+            "example": true
+          },
+          "repeat_rule": {
+            "$ref": "#/components/schemas/RepeatRule"
           }
         }
       },
       "UpdateTaskRequest": {
         "type": "object",
-        "required": ["title", "status"],
+        "required": ["title", "scheduled_at"],
         "properties": {
           "title": {
             "type": "string",
@@ -184,10 +260,28 @@
             "type": "string",
             "example": "Collect release notes and check migrations"
           },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-05-01T09:00:00Z"
+          },
+          "is_periodicity": {
+            "type": "boolean",
+            "example": true
+          },
+          "repeat_rule": {
+            "$ref": "#/components/schemas/RepeatRule"
+          }
+        }
+      },
+      "UpdateStatusRequest": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
           "status": {
             "type": "string",
-            "enum": ["new", "in_progress", "done"],
-            "example": "in_progress"
+            "enum": ["new", "in_progress", "done", "canceled"],
+            "example": "done"
           }
         }
       },
@@ -200,10 +294,22 @@
             "type": "string",
             "example": "Collect release notes and check migrations"
           },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-05-01T09:00:00Z"
+          },
           "status": {
             "type": "string",
-            "enum": ["new", "in_progress", "done"],
+            "enum": ["new", "in_progress", "done", "canceled"],
             "example": "new"
+          },
+          "is_periodicity": {
+            "type": "boolean",
+            "example": false
+          },
+          "repeat_rule": {
+            "$ref": "#/components/schemas/RepeatRule"
           },
           "created_at": {
             "type": "string",
