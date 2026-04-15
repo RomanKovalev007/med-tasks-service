@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/jackc/pgx/v5"
@@ -20,23 +21,34 @@ func New(pool *pgxpool.Pool) *Repository {
 
 func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdomain.Task, error) {
 	const query = `
-		INSERT INTO tasks (title, description, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, title, description, status, created_at, updated_at
+		INSERT INTO tasks (title, description, status, scheduled_at, is_periodicity, repeat_rule, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, title, description, status, created_at, updated_at, scheduled_at, is_periodicity, repeat_rule
 	`
 
-	row := r.pool.QueryRow(ctx, query, task.Title, task.Description, task.Status, task.CreatedAt, task.UpdatedAt)
-	created, err := scanTask(row)
+	repeatRuleJSON, err := marshalRepeatRule(task.IsPeriodicity, task.RepeatRule)
 	if err != nil {
 		return nil, err
 	}
 
-	return created, nil
+	row := r.pool.QueryRow(ctx, query,
+		task.Title,
+		task.Description,
+		task.Status,
+		task.ScheduledAt,
+		task.IsPeriodicity,
+		repeatRuleJSON,
+		task.CreatedAt,
+		task.UpdatedAt,
+	)
+
+	return scanTask(row)
 }
 
 func (r *Repository) GetByID(ctx context.Context, id int64) (*taskdomain.Task, error) {
 	const query = `
-		SELECT id, title, description, status, created_at, updated_at
+		SELECT id, title, description, status, created_at, updated_at,
+		       scheduled_at, is_periodicity, repeat_rule
 		FROM tasks
 		WHERE id = $1
 	`
@@ -57,21 +69,59 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*taskdomain.Task, e
 func (r *Repository) Update(ctx context.Context, task *taskdomain.Task) (*taskdomain.Task, error) {
 	const query = `
 		UPDATE tasks
-		SET title = $1,
-			description = $2,
-			status = $3,
-			updated_at = $4
-		WHERE id = $5
-		RETURNING id, title, description, status, created_at, updated_at
+		SET title          = $1,
+		    description    = $2,
+		    updated_at     = $3,
+		    scheduled_at   = $4,
+		    is_periodicity = $5,
+		    repeat_rule    = $6
+		WHERE id = $7
+		RETURNING id, title, description, status, created_at, updated_at,
+		          scheduled_at, is_periodicity, repeat_rule
 	`
 
-	row := r.pool.QueryRow(ctx, query, task.Title, task.Description, task.Status, task.UpdatedAt, task.ID)
+	repeatRuleJSON, err := marshalRepeatRule(task.IsPeriodicity, task.RepeatRule)
+	if err != nil {
+		return nil, err
+	}
+
+	row := r.pool.QueryRow(ctx, query,
+		task.Title,
+		task.Description,
+		task.UpdatedAt,
+		task.ScheduledAt,
+		task.IsPeriodicity,
+		repeatRuleJSON,
+		task.ID,
+	)
+
 	updated, err := scanTask(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, taskdomain.ErrNotFound
 		}
+		return nil, err
+	}
 
+	return updated, nil
+}
+
+func (r *Repository) UpdateStatus(ctx context.Context, task *taskdomain.Task) (*taskdomain.Task, error) {
+	const query = `
+		UPDATE tasks
+		SET status = $1,
+		    updated_at = $2
+		WHERE id = $3
+		RETURNING id, title, description, status, created_at, updated_at,
+		          scheduled_at, is_periodicity, repeat_rule
+	`
+
+	row := r.pool.QueryRow(ctx, query, task.Status, task.UpdatedAt, task.ID)
+	updated, err := scanTask(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, taskdomain.ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -95,7 +145,8 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 
 func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
 	const query = `
-		SELECT id, title, description, status, created_at, updated_at
+		SELECT id, title, description, status, created_at, updated_at,
+		       scheduled_at, is_periodicity, repeat_rule
 		FROM tasks
 		ORDER BY id DESC
 	`
@@ -112,7 +163,6 @@ func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
 		if err != nil {
 			return nil, err
 		}
-
 		tasks = append(tasks, *task)
 	}
 
@@ -129,8 +179,9 @@ type taskScanner interface {
 
 func scanTask(scanner taskScanner) (*taskdomain.Task, error) {
 	var (
-		task   taskdomain.Task
-		status string
+		task           taskdomain.Task
+		status         string
+		repeatRuleJSON []byte
 	)
 
 	if err := scanner.Scan(
@@ -140,11 +191,29 @@ func scanTask(scanner taskScanner) (*taskdomain.Task, error) {
 		&status,
 		&task.CreatedAt,
 		&task.UpdatedAt,
+		&task.ScheduledAt,
+		&task.IsPeriodicity,
+		&repeatRuleJSON,
 	); err != nil {
 		return nil, err
 	}
 
 	task.Status = taskdomain.Status(status)
 
+	if repeatRuleJSON != nil {
+		if err := json.Unmarshal(repeatRuleJSON, &task.RepeatRule); err != nil {
+			return nil, err
+		}
+	}
+
 	return &task, nil
+}
+
+// marshalRepeatRule serialize RepeatRule to JSON for store JSONB.
+// return nil (NULL) if task is not periodicity.
+func marshalRepeatRule(isPeriodic bool, rule taskdomain.RepeatRule) ([]byte, error) {
+	if !isPeriodic {
+		return nil, nil
+	}
+	return json.Marshal(rule)
 }
