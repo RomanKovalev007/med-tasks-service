@@ -6,10 +6,20 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	taskdomain "example.com/taskservice/internal/domain/task"
 )
+
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
+}
+
+type txKey struct{}
 
 type Repository struct {
 	pool *pgxpool.Pool
@@ -17,6 +27,26 @@ type Repository struct {
 
 func New(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
+}
+
+func (r *Repository) getQuerier(ctx context.Context) querier {
+	if tx, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
+		return tx
+	}
+	return r.pool
+}
+
+func (r *Repository) WithinTransaction(ctx context.Context, fn func(ctx context.Context) error) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := fn(context.WithValue(ctx, txKey{}, tx)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdomain.Task, error) {
@@ -31,7 +61,7 @@ func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdo
 		return nil, err
 	}
 
-	row := r.pool.QueryRow(ctx, query,
+	row := r.getQuerier(ctx).QueryRow(ctx, query,
 		task.Title,
 		task.Description,
 		task.Status,
@@ -69,7 +99,7 @@ func (r *Repository) CreateBatch(ctx context.Context, tasks []*taskdomain.Task) 
 		)
 	}
 
-	results := r.pool.SendBatch(ctx, batch)
+	results := r.getQuerier(ctx).SendBatch(ctx, batch)
 	defer results.Close()
 
 	for range tasks {
@@ -89,7 +119,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*taskdomain.Task, e
 		WHERE id = $1
 	`
 
-	row := r.pool.QueryRow(ctx, query, id)
+	row := r.getQuerier(ctx).QueryRow(ctx, query, id)
 	found, err := scanTask(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -121,7 +151,7 @@ func (r *Repository) Update(ctx context.Context, task *taskdomain.Task) (*taskdo
 		return nil, err
 	}
 
-	row := r.pool.QueryRow(ctx, query,
+	row := r.getQuerier(ctx).QueryRow(ctx, query,
 		task.Title,
 		task.Description,
 		task.UpdatedAt,
@@ -152,7 +182,7 @@ func (r *Repository) UpdateStatus(ctx context.Context, task *taskdomain.Task) (*
 		          scheduled_at, is_periodicity, repeat_rule
 	`
 
-	row := r.pool.QueryRow(ctx, query, task.Status, task.UpdatedAt, task.ID)
+	row := r.getQuerier(ctx).QueryRow(ctx, query, task.Status, task.UpdatedAt, task.ID)
 	updated, err := scanTask(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -167,7 +197,7 @@ func (r *Repository) UpdateStatus(ctx context.Context, task *taskdomain.Task) (*
 func (r *Repository) Delete(ctx context.Context, id int64) error {
 	const query = `DELETE FROM tasks WHERE id = $1`
 
-	result, err := r.pool.Exec(ctx, query, id)
+	result, err := r.getQuerier(ctx).Exec(ctx, query, id)
 	if err != nil {
 		return err
 	}
@@ -187,7 +217,7 @@ func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
 		ORDER BY id DESC
 	`
 
-	rows, err := r.pool.Query(ctx, query)
+	rows, err := r.getQuerier(ctx).Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}

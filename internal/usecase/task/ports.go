@@ -14,6 +14,7 @@ type Repository interface {
 	UpdateStatus(ctx context.Context, task *taskdomain.Task) (*taskdomain.Task, error)
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context) ([]taskdomain.Task, error)
+	WithinTransaction(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
 type Usecase interface {

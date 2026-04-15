@@ -30,18 +30,23 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*taskdomain.Ta
 	model.CreatedAt = now
 	model.UpdatedAt = now
 
-	created, err := s.repo.Create(ctx, &model)
-	if err != nil {
-		return nil, err
+	if !model.IsPeriodicity || model.RepeatRule.PeriodicityType != taskdomain.PeriodSpecDates {
+		return s.repo.Create(ctx, &model)
 	}
 
-	if created.IsPeriodicity && created.RepeatRule.PeriodicityType == taskdomain.PeriodSpecDates {
-		if err := s.createAllSpecDateTasks(ctx, created); err != nil {
-			return nil, err
-		}
-	}
+	var created *taskdomain.Task
+	err = s.repo.WithinTransaction(ctx, 
+		func(ctx context.Context) error {
+			var err error
+			created, err = s.repo.Create(ctx, &model)
+			if err != nil {
+				return err
+			}
+			return s.createAllSpecDateTasks(ctx, created)
+		},
+	)
 
-	return created, nil
+	return created, err
 }
 
 func (s *Service) GetByID(ctx context.Context, id int64) (*taskdomain.Task, error) {
@@ -82,30 +87,35 @@ func (s *Service) UpdateStatus(ctx context.Context, id int64, input UpdateStatus
 	}
 
 	
-	if input.Status == taskdomain.StatusDone || input.Status == taskdomain.StatusCanceled{
-		task, err := s.repo.GetByID(ctx, id)
-		if err != nil{
-			return nil, fmt.Errorf("%w: cant get task by id", err)
-		}
-		if task.IsPeriodicity {
-			if err := s.createNewRepeatableTask(ctx, task); err != nil {
-				return nil, fmt.Errorf("create next repeatable task: %w", err)
-			}
-		}
+	if input.Status == taskdomain.StatusDone || input.Status == taskdomain.StatusCanceled {
+		var updated *taskdomain.Task
+		err := s.repo.WithinTransaction(ctx, 
+			func(ctx context.Context) error {
+				model := &taskdomain.Task{ID: id, Status: input.Status, UpdatedAt: s.now()}
+				var err error
+				updated, err = s.repo.UpdateStatus(ctx, model)
+				if err != nil {
+					return fmt.Errorf("update status: %w", err)
+				}
+
+				if updated.IsPeriodicity {
+					if err := s.createNewRepeatableTask(ctx, updated); err != nil {
+						return fmt.Errorf("create next repeatable task: %w", err)
+					}
+				}
+				return nil
+			},
+		)
+
+		return updated, err
 	}
 
 	model := &taskdomain.Task{
-		ID:          id,
-		Status:      input.Status,
-		UpdatedAt:   s.now(),
+		ID:        id,
+		Status:    input.Status,
+		UpdatedAt: s.now(),
 	}
-
-	updated, err := s.repo.UpdateStatus(ctx, model)
-	if err != nil {
-		return nil, err
-	}
-
-	return updated, nil
+	return s.repo.UpdateStatus(ctx, model)
 }
 
 func (s *Service) Delete(ctx context.Context, id int64) error {
