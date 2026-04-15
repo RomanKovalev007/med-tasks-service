@@ -22,23 +22,23 @@ func NewService(repo Repository) *Service {
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (*taskdomain.Task, error) {
-	normalized, err := validateCreateInput(input)
+	model, err := validateCreateInput(input)
 	if err != nil {
 		return nil, err
-	}
-
-	model := &taskdomain.Task{
-		Title:       normalized.Title,
-		Description: normalized.Description,
-		Status:      normalized.Status,
 	}
 	now := s.now()
 	model.CreatedAt = now
 	model.UpdatedAt = now
 
-	created, err := s.repo.Create(ctx, model)
+	created, err := s.repo.Create(ctx, &model)
 	if err != nil {
 		return nil, err
+	}
+
+	if created.IsPeriodicity && created.RepeatRule.PeriodicityType == taskdomain.PeriodSpecDates {
+		if err := s.createAllSpecDateTasks(ctx, created); err != nil {
+			return nil, err
+		}
 	}
 
 	return created, nil
@@ -57,20 +57,50 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
 	}
 
-	normalized, err := validateUpdateInput(input)
+	model, err := validateUpdateInput(input)
 	if err != nil {
 		return nil, err
 	}
 
+	model.UpdatedAt = s.now()
+
+	updated, err := s.repo.Update(ctx, &model)
+	if err != nil {
+		return nil, err
+	}
+
+	return updated, nil
+}
+
+func (s *Service) UpdateStatus(ctx context.Context, id int64, input UpdateStatusInput) (*taskdomain.Task, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
+	}
+
+	if !input.Status.Valid(){
+		return nil, fmt.Errorf("%w: invalid status", ErrInvalidInput)
+	}
+
+	
+	if input.Status == taskdomain.StatusDone || input.Status == taskdomain.StatusCanceled{
+		task, err := s.repo.GetByID(ctx, id)
+		if err != nil{
+			return nil, fmt.Errorf("%w: cant get task by id", err)
+		}
+		if task.IsPeriodicity {
+			if err := s.createNewRepeatableTask(ctx, task); err != nil {
+				return nil, fmt.Errorf("create next repeatable task: %w", err)
+			}
+		}
+	}
+
 	model := &taskdomain.Task{
 		ID:          id,
-		Title:       normalized.Title,
-		Description: normalized.Description,
-		Status:      normalized.Status,
+		Status:      input.Status,
 		UpdatedAt:   s.now(),
 	}
 
-	updated, err := s.repo.Update(ctx, model)
+	updated, err := s.repo.UpdateStatus(ctx, model)
 	if err != nil {
 		return nil, err
 	}
@@ -90,12 +120,23 @@ func (s *Service) List(ctx context.Context) ([]taskdomain.Task, error) {
 	return s.repo.List(ctx)
 }
 
-func validateCreateInput(input CreateInput) (CreateInput, error) {
+func validateCreateInput(input CreateInput) (taskdomain.Task, error) {
 	input.Title = strings.TrimSpace(input.Title)
 	input.Description = strings.TrimSpace(input.Description)
 
 	if input.Title == "" {
-		return CreateInput{}, fmt.Errorf("%w: title is required", ErrInvalidInput)
+		return taskdomain.Task{}, fmt.Errorf("%w: title is required", ErrInvalidInput)
+	}
+
+	scheduledAt, err := time.Parse(time.RFC3339, input.ScheduledAt)
+	if err != nil {
+		return taskdomain.Task{}, fmt.Errorf("%w: scheduled_at must be RFC3339 (e.g. 2006-01-02T15:04:05Z)", ErrInvalidInput)
+	}
+
+	if input.IsPeriodicity {
+		if err := validateRepeatRule(input.RepeatRule); err != nil {
+			return taskdomain.Task{}, err
+		}
 	}
 
 	if input.Status == "" {
@@ -103,23 +144,44 @@ func validateCreateInput(input CreateInput) (CreateInput, error) {
 	}
 
 	if !input.Status.Valid() {
-		return CreateInput{}, fmt.Errorf("%w: invalid status", ErrInvalidInput)
+		return taskdomain.Task{}, fmt.Errorf("%w: invalid status", ErrInvalidInput)
 	}
 
-	return input, nil
+	return taskdomain.Task{
+		Title:         input.Title,
+		Description:   input.Description,
+		IsPeriodicity: input.IsPeriodicity,
+		ScheduledAt:   scheduledAt.UTC(),
+		RepeatRule:    input.RepeatRule,
+		Status:        input.Status,
+	}, nil
 }
 
-func validateUpdateInput(input UpdateInput) (UpdateInput, error) {
+func validateUpdateInput(input UpdateInput) (taskdomain.Task, error) {
 	input.Title = strings.TrimSpace(input.Title)
 	input.Description = strings.TrimSpace(input.Description)
 
 	if input.Title == "" {
-		return UpdateInput{}, fmt.Errorf("%w: title is required", ErrInvalidInput)
+		return taskdomain.Task{}, fmt.Errorf("%w: title is required", ErrInvalidInput)
 	}
 
-	if !input.Status.Valid() {
-		return UpdateInput{}, fmt.Errorf("%w: invalid status", ErrInvalidInput)
+	scheduledAt, err := time.Parse(time.RFC3339, input.ScheduledAt)
+	if err != nil {
+		return taskdomain.Task{}, fmt.Errorf("%w: scheduled_at must be RFC3339 (e.g. 2006-01-02T15:04:05Z)", ErrInvalidInput)
 	}
 
-	return input, nil
+	if input.IsPeriodicity {
+		if err := validateRepeatRule(input.RepeatRule); err != nil {
+			return taskdomain.Task{}, err
+		}
+	}
+
+	return taskdomain.Task{
+		Title:         input.Title,
+		Description:   input.Description,
+		IsPeriodicity: input.IsPeriodicity,
+		ScheduledAt:   scheduledAt.UTC(),
+		RepeatRule:    input.RepeatRule,
+	}, nil
 }
+

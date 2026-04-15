@@ -45,6 +45,42 @@ func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdo
 	return scanTask(row)
 }
 
+func (r *Repository) CreateBatch(ctx context.Context, tasks []*taskdomain.Task) error {
+	const query = `
+		INSERT INTO tasks (title, description, status, scheduled_at, is_periodicity, repeat_rule, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`
+
+	batch := &pgx.Batch{}
+	for _, task := range tasks {
+		repeatRuleJSON, err := marshalRepeatRule(task.IsPeriodicity, task.RepeatRule)
+		if err != nil {
+			return err
+		}
+		batch.Queue(query,
+			task.Title,
+			task.Description,
+			task.Status,
+			task.ScheduledAt,
+			task.IsPeriodicity,
+			repeatRuleJSON,
+			task.CreatedAt,
+			task.UpdatedAt,
+		)
+	}
+
+	results := r.pool.SendBatch(ctx, batch)
+	defer results.Close()
+
+	for range tasks {
+		if _, err := results.Exec(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (r *Repository) GetByID(ctx context.Context, id int64) (*taskdomain.Task, error) {
 	const query = `
 		SELECT id, title, description, status, created_at, updated_at,
