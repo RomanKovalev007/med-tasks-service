@@ -43,7 +43,7 @@ func computeNextScheduledAt(current time.Time, rule taskdomain.RepeatRule) (*tim
 		next := current.AddDate(0, 0, rule.Interval)
 		return &next, nil
 
-	case taskdomain.PeriodMothly:
+	case taskdomain.PeriodMonthly:
 		next := nextMonthlyDate(current, rule.Days)
 		return &next, nil
 
@@ -185,7 +185,7 @@ func validateRepeatRule(rule taskdomain.RepeatRule) error {
 		if rule.Interval <= 0 {
 			return fmt.Errorf("%w: daily interval must be positive", ErrInvalidInput)
 		}
-	case taskdomain.PeriodMothly:
+	case taskdomain.PeriodMonthly:
 		if len(rule.Days) == 0 {
 			return fmt.Errorf("%w: monthly rule requires at least one day", ErrInvalidInput)
 		}
