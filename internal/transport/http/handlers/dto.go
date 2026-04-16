@@ -15,6 +15,10 @@ type taskMutationDTO struct {
 	RepeatRule    taskdomain.RepeatRule `json:"repeat_rule,omitempty"`
 }
 
+type taskUpdateStatusDTO struct {
+	Status        taskdomain.Status     `json:"status,omitempty"`
+}
+
 type taskDTO struct {
 	ID            int64                 `json:"id"`
 	Title         string                `json:"title"`
