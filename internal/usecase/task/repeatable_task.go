@@ -165,7 +165,7 @@ func validateRepeatRule(rule taskdomain.RepeatRule) error {
 			return fmt.Errorf("%w: monthly rule requires at least one day", ErrInvalidInput)
 		}
 		for _, d := range rule.Days {
-			if d < 1 || d > 31 {
+			if d < 1 || d > 30 {
 				return fmt.Errorf("%w: monthly day must be between 1 and 31", ErrInvalidInput)
 			}
 		}

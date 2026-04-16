@@ -67,6 +67,7 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 		return nil, err
 	}
 
+	model.ID = id
 	model.UpdatedAt = s.now()
 
 	updated, err := s.repo.Update(ctx, &model)
