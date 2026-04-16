@@ -139,14 +139,24 @@ func validateCreateInput(input CreateInput) (taskdomain.Task, error) {
 		return taskdomain.Task{}, fmt.Errorf("%w: title is required", ErrInvalidInput)
 	}
 
-	scheduledAt, err := time.Parse(time.RFC3339, input.ScheduledAt)
-	if err != nil {
-		return taskdomain.Task{}, fmt.Errorf("%w: scheduled_at must be RFC3339 (e.g. 2006-01-02T15:04:05Z)", ErrInvalidInput)
-	}
-
 	if input.IsPeriodicity {
 		if err := validateRepeatRule(input.RepeatRule); err != nil {
 			return taskdomain.Task{}, err
+		}
+	}
+
+	var scheduledAt time.Time
+	if input.IsPeriodicity && input.RepeatRule.PeriodicityType == taskdomain.PeriodSpecDates {
+		first, err := time.Parse("2006-01-02", input.RepeatRule.Dates[0])
+		if err != nil {
+			return taskdomain.Task{}, fmt.Errorf("%w: first spec_date is invalid: %s", ErrInvalidInput, err)
+		}
+		scheduledAt = first.UTC()
+	} else {
+		var err error
+		scheduledAt, err = time.Parse(time.RFC3339, input.ScheduledAt)
+		if err != nil {
+			return taskdomain.Task{}, fmt.Errorf("%w: scheduled_at must be RFC3339 (e.g. 2006-01-02T15:04:05Z)", ErrInvalidInput)
 		}
 	}
 
