@@ -47,6 +47,10 @@ func computeNextScheduledAt(current time.Time, rule taskdomain.RepeatRule) (*tim
 		next := nextMonthlyDate(current, rule.Days)
 		return &next, nil
 
+	case taskdomain.PeriodWeekly:
+		next := nextWeeklyDate(current, rule.Weekdays)
+		return &next, nil
+
 	case taskdomain.PeriodSpecDates:
 		return nil, nil
 
@@ -94,6 +98,27 @@ func nextMonthlyDate(current time.Time, days []int) time.Time {
 
 	// should not be execute
 	return current.AddDate(0, 1, 0)
+}
+
+// nextWeeklyDate finds the nearest next day matching one of the given weekdays.
+// weekdays must be sorted and contain values 0 (Sunday) through 6 (Saturday).
+func nextWeeklyDate(current time.Time, weekdays []int) time.Time {
+	h, m, sec := current.Clock()
+	loc := current.Location()
+
+	next := current.AddDate(0, 0, 1)
+	for range 7 {
+		wd := int(next.Weekday())
+		for _, w := range weekdays {
+			if w == wd {
+				return time.Date(next.Year(), next.Month(), next.Day(), h, m, sec, 0, loc)
+			}
+		}
+		next = next.AddDate(0, 0, 1)
+	}
+
+	// unreachable with valid input (weekdays is non-empty, 7 days cover all weekdays)
+	return current.AddDate(0, 0, 7)
 }
 
 // nextEvenOddDate find nearest next day with needed parity.
@@ -166,7 +191,7 @@ func validateRepeatRule(rule taskdomain.RepeatRule) error {
 		}
 		for _, d := range rule.Days {
 			if d < 1 || d > 30 {
-				return fmt.Errorf("%w: monthly day must be between 1 and 31", ErrInvalidInput)
+				return fmt.Errorf("%w: monthly day must be between 1 and 30", ErrInvalidInput)
 			}
 		}
 		sort.Ints(rule.Days)
@@ -184,6 +209,18 @@ func validateRepeatRule(rule taskdomain.RepeatRule) error {
 		if !rule.Parity.Valid() {
 			return fmt.Errorf("%w: even_odd rule requires valid parity (even|odd)", ErrInvalidInput)
 		}
+	
+	case taskdomain.PeriodWeekly:
+		if len(rule.Weekdays) == 0 {
+			return fmt.Errorf("%w: weekly rule requires at least one weekday (0=Sun, 6=Sat)", ErrInvalidInput)
+		}
+		for _, d := range rule.Weekdays {
+			if d < 0 || d > 6 {
+				return fmt.Errorf("%w: weekday must be between 0 and 6", ErrInvalidInput)
+			}
+		}
+		sort.Ints(rule.Weekdays)
+
 	}
 
 	return nil

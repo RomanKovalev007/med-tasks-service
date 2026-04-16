@@ -189,7 +189,7 @@
         "properties": {
           "periodicity_type": {
             "type": "string",
-            "enum": ["daily", "monthly", "spec_dates", "even_odd"],
+            "enum": ["daily", "weekly", "monthly", "spec_dates", "even_odd"],
             "example": "daily"
           },
           "interval": {
@@ -197,10 +197,16 @@
             "description": "For daily: repeat every N days",
             "example": 3
           },
+          "weekdays": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0, "maximum": 6 },
+            "description": "For weekly: days of week (0=Sunday, 1=Monday, ..., 6=Saturday)",
+            "example": [1, 3, 5]
+          },
           "days": {
             "type": "array",
-            "items": { "type": "integer", "minimum": 1, "maximum": 31 },
-            "description": "For monthly: day numbers of month",
+            "items": { "type": "integer", "minimum": 1, "maximum": 30 },
+            "description": "For monthly: day numbers of month (1–30)",
             "example": [1, 15]
           },
           "dates": {

@@ -15,6 +15,7 @@ const (
 	StatusCanceled   Status = "canceled"
 
 	PeriodDaily     PeriodicityType = "daily"
+	PeriodWeekly    PeriodicityType = "weekly"
 	PeriodMothly    PeriodicityType = "monthly"
 	PeriodSpecDates PeriodicityType = "spec_dates"
 	PeriodEvenOdd   PeriodicityType = "even_odd"
@@ -29,6 +30,7 @@ type RepeatRule struct {
 	Days            []int           `json:"days,omitempty"`     // for monthly (month dates 1-30)
 	Dates           []string        `json:"dates,omitempty"`    // for spec_dates (YYYY-MM-DD)
 	Parity          Parity          `json:"parity,omitempty"`   // "even" / "odd"
+	Weekdays []int `json:"weekdays,omitempty"`   // for weekly (0-Sunday, 1-Monday, ...)
 }
 
 type Task struct {
@@ -56,7 +58,7 @@ func (s Status) Valid() bool {
 
 func (t PeriodicityType) Valid() bool {
 	switch t {
-	case PeriodDaily, PeriodMothly, PeriodEvenOdd, PeriodSpecDates:
+	case PeriodDaily, PeriodWeekly, PeriodMothly, PeriodEvenOdd, PeriodSpecDates:
 		return true
 	default:
 		return false
