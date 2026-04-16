@@ -175,53 +175,69 @@ func (s *Service) createAllSpecDateTasks(ctx context.Context, task *taskdomain.T
 	return s.repo.CreateBatch(ctx, tasks)
 }
 
-func validateRepeatRule(rule taskdomain.RepeatRule) error {
+func validateRepeatRule(rule taskdomain.RepeatRule) (taskdomain.RepeatRule, error) {
 	if !rule.PeriodicityType.Valid() {
-		return fmt.Errorf("%w: invalid periodicity type", ErrInvalidInput)
+		return rule, fmt.Errorf("%w: invalid periodicity type", ErrInvalidInput)
 	}
 
 	switch rule.PeriodicityType {
 	case taskdomain.PeriodDaily:
 		if rule.Interval <= 0 {
-			return fmt.Errorf("%w: daily interval must be positive", ErrInvalidInput)
+			return rule, fmt.Errorf("%w: daily interval must be positive", ErrInvalidInput)
 		}
 	case taskdomain.PeriodMonthly:
 		if len(rule.Days) == 0 {
-			return fmt.Errorf("%w: monthly rule requires at least one day", ErrInvalidInput)
+			return rule, fmt.Errorf("%w: monthly rule requires at least one day", ErrInvalidInput)
 		}
 		for _, d := range rule.Days {
 			if d < 1 || d > 30 {
-				return fmt.Errorf("%w: monthly day must be between 1 and 30", ErrInvalidInput)
+				return rule, fmt.Errorf("%w: monthly day must be between 1 and 30", ErrInvalidInput)
 			}
 		}
 		sort.Ints(rule.Days)
+		rule.Days = dedup(rule.Days)
 	case taskdomain.PeriodSpecDates:
 		if len(rule.Dates) == 0 {
-			return fmt.Errorf("%w: spec_dates rule requires at least one date", ErrInvalidInput)
+			return rule, fmt.Errorf("%w: spec_dates rule requires at least one date", ErrInvalidInput)
 		}
 		for _, d := range rule.Dates {
 			if _, err := time.Parse("2006-01-02", d); err != nil {
-				return fmt.Errorf("%w: spec_dates date must be YYYY-MM-DD, got %q", ErrInvalidInput, d)
+				return rule, fmt.Errorf("%w: spec_dates date must be YYYY-MM-DD, got %q", ErrInvalidInput, d)
 			}
 		}
 		sort.Strings(rule.Dates)
+		rule.Dates = dedup(rule.Dates)
 	case taskdomain.PeriodEvenOdd:
 		if !rule.Parity.Valid() {
-			return fmt.Errorf("%w: even_odd rule requires valid parity (even|odd)", ErrInvalidInput)
+			return rule, fmt.Errorf("%w: even_odd rule requires valid parity (even|odd)", ErrInvalidInput)
 		}
-	
 	case taskdomain.PeriodWeekly:
 		if len(rule.Weekdays) == 0 {
-			return fmt.Errorf("%w: weekly rule requires at least one weekday (0=Sun, 6=Sat)", ErrInvalidInput)
+			return rule, fmt.Errorf("%w: weekly rule requires at least one weekday (0=Sun, 6=Sat)", ErrInvalidInput)
 		}
 		for _, d := range rule.Weekdays {
 			if d < 0 || d > 6 {
-				return fmt.Errorf("%w: weekday must be between 0 and 6", ErrInvalidInput)
+				return rule, fmt.Errorf("%w: weekday must be between 0 and 6", ErrInvalidInput)
 			}
 		}
 		sort.Ints(rule.Weekdays)
-
+		rule.Weekdays = dedup(rule.Weekdays)
 	}
 
-	return nil
+	return rule, nil
+}
+
+// dedup removes consecutive duplicates from a sorted slice.
+func dedup[T comparable](s []T) []T {
+	if len(s) <= 1 {
+		return s
+	}
+	j := 1
+	for i := 1; i < len(s); i++ {
+		if s[i] != s[i-1] {
+			s[j] = s[i]
+			j++
+		}
+	}
+	return s[:j]
 }

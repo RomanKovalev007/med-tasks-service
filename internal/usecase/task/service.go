@@ -140,9 +140,11 @@ func validateCreateInput(input CreateInput) (taskdomain.Task, error) {
 	}
 
 	if input.IsPeriodicity {
-		if err := validateRepeatRule(input.RepeatRule); err != nil {
+		cleanedRule, err := validateRepeatRule(input.RepeatRule)
+		if err != nil {
 			return taskdomain.Task{}, err
 		}
+		input.RepeatRule = cleanedRule
 	}
 
 	var scheduledAt time.Time
@@ -192,9 +194,11 @@ func validateUpdateInput(input UpdateInput) (taskdomain.Task, error) {
 	}
 
 	if input.IsPeriodicity {
-		if err := validateRepeatRule(input.RepeatRule); err != nil {
+		cleanedRule, err := validateRepeatRule(input.RepeatRule)
+		if err != nil {
 			return taskdomain.Task{}, err
 		}
+		input.RepeatRule = cleanedRule
 	}
 
 	return taskdomain.Task{
