@@ -143,19 +143,21 @@ func validateCreateInput(input CreateInput) (taskdomain.Task, error) {
 		input.RepeatRule = cleanedRule
 	}
 
+	tod, err := time.Parse(time.RFC3339, input.ScheduledAt)
+	if err != nil {
+		return taskdomain.Task{}, fmt.Errorf("%w: scheduled_at must be RFC3339 (e.g. 2006-01-02T15:04:05Z)", ErrInvalidInput)
+	}
+
 	var scheduledAt time.Time
 	if input.IsPeriodicity && input.RepeatRule.PeriodicityType == taskdomain.PeriodSpecDates {
 		first, err := time.Parse("2006-01-02", input.RepeatRule.Dates[0])
 		if err != nil {
 			return taskdomain.Task{}, fmt.Errorf("%w: first spec_date is invalid: %s", ErrInvalidInput, err)
 		}
-		scheduledAt = first.UTC()
+		h, m, sec := tod.UTC().Clock()
+		scheduledAt = time.Date(first.Year(), first.Month(), first.Day(), h, m, sec, 0, time.UTC)
 	} else {
-		var err error
-		scheduledAt, err = time.Parse(time.RFC3339, input.ScheduledAt)
-		if err != nil {
-			return taskdomain.Task{}, fmt.Errorf("%w: scheduled_at must be RFC3339 (e.g. 2006-01-02T15:04:05Z)", ErrInvalidInput)
-		}
+		scheduledAt = tod.UTC()
 	}
 
 	if input.IsPeriodicity {
@@ -170,6 +172,10 @@ func validateCreateInput(input CreateInput) (taskdomain.Task, error) {
 
 	if !input.Status.Valid() {
 		return taskdomain.Task{}, fmt.Errorf("%w: invalid status", ErrInvalidInput)
+	}
+
+	if input.IsPeriodicity && (input.Status == taskdomain.StatusDone || input.Status == taskdomain.StatusCanceled) {
+		return taskdomain.Task{}, fmt.Errorf("%w: periodic task cannot be created in terminal status", ErrInvalidInput)
 	}
 
 	return taskdomain.Task{

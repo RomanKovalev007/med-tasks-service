@@ -201,7 +201,7 @@ func (r *Repository) resolveUpdateStatusConflict(ctx context.Context, id int64) 
 	const query = `SELECT EXISTS(SELECT 1 FROM tasks WHERE id = $1)`
 
 	var exists bool
-	if err := r.pool.QueryRow(ctx, query, id).Scan(&exists); err != nil {
+	if err := r.getQuerier(ctx).QueryRow(ctx, query, id).Scan(&exists); err != nil {
 		return err
 	}
 
