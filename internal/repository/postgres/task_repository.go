@@ -178,6 +178,7 @@ func (r *Repository) UpdateStatus(ctx context.Context, task *taskdomain.Task) (*
 		SET status = $1,
 		    updated_at = $2
 		WHERE id = $3
+		  AND status NOT IN ('done', 'canceled')
 		RETURNING id, title, description, status, created_at, updated_at,
 		          scheduled_at, is_periodicity, repeat_rule
 	`
@@ -186,12 +187,28 @@ func (r *Repository) UpdateStatus(ctx context.Context, task *taskdomain.Task) (*
 	updated, err := scanTask(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, taskdomain.ErrNotFound
+			return nil, r.resolveUpdateStatusConflict(ctx, task.ID)
 		}
 		return nil, err
 	}
 
 	return updated, nil
+}
+
+// resolveUpdateStatusConflict distinguishes between not found and terminal status conflict
+// when UpdateStatus affects 0 rows.
+func (r *Repository) resolveUpdateStatusConflict(ctx context.Context, id int64) error {
+	const query = `SELECT EXISTS(SELECT 1 FROM tasks WHERE id = $1)`
+
+	var exists bool
+	if err := r.pool.QueryRow(ctx, query, id).Scan(&exists); err != nil {
+		return err
+	}
+
+	if !exists {
+		return taskdomain.ErrNotFound
+	}
+	return taskdomain.ErrConflict
 }
 
 func (r *Repository) Delete(ctx context.Context, id int64) error {
