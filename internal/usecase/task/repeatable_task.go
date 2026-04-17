@@ -175,6 +175,30 @@ func (s *Service) createAllSpecDateTasks(ctx context.Context, task *taskdomain.T
 	return s.repo.CreateBatch(ctx, tasks)
 }
 
+// validateScheduledAtMatchesRule checks that scheduled_at falls on a valid day
+// according to the repeat rule. Only applicable to weekly and monthly types.
+func validateScheduledAtMatchesRule(scheduledAt time.Time, rule taskdomain.RepeatRule) error {
+	switch rule.PeriodicityType {
+	case taskdomain.PeriodWeekly:
+		wd := int(scheduledAt.Weekday())
+		for _, w := range rule.Weekdays {
+			if w == wd {
+				return nil
+			}
+		}
+		return fmt.Errorf("%w: scheduled_at weekday (%d) does not match weekdays in repeat_rule", ErrInvalidInput, wd)
+	case taskdomain.PeriodMonthly:
+		d := scheduledAt.Day()
+		for _, day := range rule.Days {
+			if day == d {
+				return nil
+			}
+		}
+		return fmt.Errorf("%w: scheduled_at day (%d) does not match days in repeat_rule", ErrInvalidInput, d)
+	}
+	return nil
+}
+
 func validateRepeatRule(rule taskdomain.RepeatRule) (taskdomain.RepeatRule, error) {
 	if !rule.PeriodicityType.Valid() {
 		return rule, fmt.Errorf("%w: invalid periodicity type", ErrInvalidInput)

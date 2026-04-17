@@ -162,6 +162,12 @@ func validateCreateInput(input CreateInput) (taskdomain.Task, error) {
 		}
 	}
 
+	if input.IsPeriodicity {
+		if err := validateScheduledAtMatchesRule(scheduledAt, input.RepeatRule); err != nil {
+			return taskdomain.Task{}, err
+		}
+	}
+
 	if input.Status == "" {
 		input.Status = taskdomain.StatusNew
 	}
@@ -199,6 +205,10 @@ func validateUpdateInput(input UpdateInput) (taskdomain.Task, error) {
 			return taskdomain.Task{}, err
 		}
 		input.RepeatRule = cleanedRule
+
+		if err := validateScheduledAtMatchesRule(scheduledAt.UTC(), input.RepeatRule); err != nil {
+			return taskdomain.Task{}, err
+		}
 	}
 
 	return taskdomain.Task{
