@@ -142,7 +142,8 @@
             }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
         }
       }
     }
@@ -167,6 +168,14 @@
       },
       "NotFound": {
         "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Status conflict — task is already in a terminal state",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/Error" }
@@ -286,7 +295,8 @@
         "properties": {
           "status": {
             "type": "string",
-            "enum": ["new", "in_progress", "done", "canceled"],
+            "enum": ["in_progress", "done", "canceled"],
+            "description": "Target status. Allowed transitions: new → in_progress/done/canceled; in_progress → done/canceled. Terminal statuses (done, canceled) are irreversible.",
             "example": "done"
           }
         }
