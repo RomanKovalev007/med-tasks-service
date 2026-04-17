@@ -83,40 +83,36 @@ func (s *Service) UpdateStatus(ctx context.Context, id int64, input UpdateStatus
 		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
 	}
 
-	if !input.Status.Valid(){
+	if !input.Status.Valid() {
 		return nil, fmt.Errorf("%w: invalid status", ErrInvalidInput)
 	}
 
-	
-	if input.Status == taskdomain.StatusDone || input.Status == taskdomain.StatusCanceled {
-		var updated *taskdomain.Task
-		err := s.repo.WithinTransaction(ctx, 
-			func(ctx context.Context) error {
-				model := &taskdomain.Task{ID: id, Status: input.Status, UpdatedAt: s.now()}
-				var err error
-				updated, err = s.repo.UpdateStatus(ctx, model)
-				if err != nil {
-					return fmt.Errorf("update status: %w", err)
-				}
+	var updated *taskdomain.Task
+	err := s.repo.WithinTransaction(ctx, func(ctx context.Context) error {
+		current, err := s.repo.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
 
-				if updated.IsPeriodicity {
-					if err := s.createNewRepeatableTask(ctx, updated); err != nil {
-						return fmt.Errorf("create next repeatable task: %w", err)
-					}
-				}
-				return nil
-			},
-		)
+		if !taskdomain.ValidTransition(current.Status, input.Status) {
+			return fmt.Errorf("%w: cannot transition from %s to %s", ErrInvalidInput, current.Status, input.Status)
+		}
 
-		return updated, err
-	}
+		model := &taskdomain.Task{ID: id, Status: input.Status, UpdatedAt: s.now()}
+		updated, err = s.repo.UpdateStatus(ctx, model)
+		if err != nil {
+			return err
+		}
 
-	model := &taskdomain.Task{
-		ID:        id,
-		Status:    input.Status,
-		UpdatedAt: s.now(),
-	}
-	return s.repo.UpdateStatus(ctx, model)
+		if updated.IsPeriodicity && (input.Status == taskdomain.StatusDone || input.Status == taskdomain.StatusCanceled) {
+			if err := s.createNewRepeatableTask(ctx, updated); err != nil {
+				return fmt.Errorf("create next repeatable task: %w", err)
+			}
+		}
+		return nil
+	})
+
+	return updated, err
 }
 
 func (s *Service) Delete(ctx context.Context, id int64) error {

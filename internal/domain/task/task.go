@@ -56,6 +56,17 @@ func (s Status) Valid() bool {
 	}
 }
 
+func ValidTransition(from, to Status) bool {
+	switch from {
+	case StatusNew:
+		return to == StatusInProgress || to == StatusDone || to == StatusCanceled
+	case StatusInProgress:
+		return to == StatusDone || to == StatusCanceled
+	default: // done, canceled — terminal
+		return false
+	}
+}
+
 func (t PeriodicityType) Valid() bool {
 	switch t {
 	case PeriodDaily, PeriodWeekly, PeriodMonthly, PeriodEvenOdd, PeriodSpecDates:
